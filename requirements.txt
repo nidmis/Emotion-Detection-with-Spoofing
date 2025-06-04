@@ -1,0 +1,10 @@
+streamlit
+tensorflow==2.15.1
+opencv-python-headless
+numpy==1.26.4
+Pillow
+plotly
+pandas==2.1.4
+scikit-learn
+matplotlib
+kaggle
