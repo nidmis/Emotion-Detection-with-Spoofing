@@ -9,9 +9,6 @@ from PIL import Image
 import plotly.express as px
 from datetime import datetime
 import pandas as pd
-import av
-import threading
-import time
  
 APP_VERSION = "1.1.0"
  
@@ -24,7 +21,141 @@ st.set_page_config(
  
 st.markdown("""
 <style>
-    /* ... (keep all existing CSS styles unchanged) ... */
+    .main-header {
+        background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%);
+        padding: 2rem;
+        border-radius: 10px;
+        color: white;
+        text-align: center;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .metric-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 1.5rem;
+        border-radius: 10px;
+        color: white;
+        text-align: center;
+        margin: 1rem 0;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    .result-card { 
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        padding: 1.5rem;
+        border-radius: 10px;
+        color: white;
+        margin: 1rem 0;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    .success-card { 
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        padding: 1.5rem;
+        border-radius: 10px;
+        color: white; 
+        margin: 1rem 0;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    .warning-card { 
+        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        padding: 1.5rem;
+        border-radius: 10px;
+        color: #333; 
+        margin: 1rem 0;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    .stButton > button {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 25px;
+        padding: 0.75rem 2rem;
+        font-weight: bold;
+        transition: all 0.3s ease;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+    }
+    
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, #2193b0 0%, #6dd5ed 100%);
+    }
+    
+    .live-results { 
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 15px;
+        padding: 1rem;
+        margin: 1rem 0;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .result-summary-area {
+        margin-top: 30px; 
+        padding: 20px;
+        background-color: #f8f9fa; 
+        border-radius: 12px; 
+        border: 1px solid #e9ecef;
+    }
+    .result-summary-area h3.summary-title { 
+        color: #0056b3;
+        margin-bottom: 20px;
+        text-align: center;
+        font-size: 1.5em;
+    }
+    .face-result-item {
+        background-color: #ffffff;
+        border: 1px solid #ced4da;
+        border-left: 7px solid #007bff; 
+        border-radius: 8px;
+        padding: 20px; 
+        margin-bottom: 20px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.08); 
+        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+    }
+    .face-result-item:hover {
+        transform: translateY(-5px); 
+        box-shadow: 0 6px 15px rgba(0,0,0,0.12);
+    }
+    .face-result-item h4.face-id-title {  
+        margin-top: 0;
+        margin-bottom: 15px; 
+        color: #0056b3; 
+        font-size: 1.2em; 
+        border-bottom: 2px solid #f0f2f6; 
+        padding-bottom: 10px;
+    }
+    .result-label {
+        font-weight: bold;
+        color: #343a40; 
+        margin-right: 8px;
+        font-size: 1.05em;
+    }
+    .result-value-emotion {
+        font-weight: bold;
+        font-size: 1.05em;
+    }
+    .result-value-spoof-real {
+        color: #198754; 
+        font-weight: bold;
+        font-size: 1.05em;
+    }
+    .result-value-spoof-fake {
+        color: #dc3545; 
+        font-weight: bold;
+        font-size: 1.05em;
+    }
+    .confidence-score {
+        font-size: 0.95em; 
+        color: #495057; 
+    }
+
 </style>
 """, unsafe_allow_html=True)
  
@@ -38,6 +169,8 @@ if 'spoof_real_threshold_ss' not in st.session_state:
     st.session_state.spoof_real_threshold_ss = 0.70
 if 'camera_permission' not in st.session_state:
     st.session_state.camera_permission = False
+if 'camera_frame' not in st.session_state:
+    st.session_state.camera_frame = None
  
 @st.cache_resource
 def load_emotion_model():
@@ -299,68 +432,55 @@ def webcam_analysis(emotion_model, spoof_model, face_cascade):
     )
     st.markdown("---")
 
+    # Use Streamlit's camera_input to trigger browser permission
+    camera_img = st.camera_input("Look at the camera", key="camera_feed")
+    
+    if camera_img is not None:
+        # Convert camera image to OpenCV format
+        bytes_data = camera_img.getvalue()
+        cv2_img = cv2.imdecode(np.frombuffer(bytes_data, np.uint8), cv2.IMREAD_COLOR)
+        st.session_state.camera_frame = cv2_img
+
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
-        if st.button("🚀 Start Camera", key="start_cam_btn_main", use_container_width=True):
+        if st.button("🚀 Start Analysis", key="start_analysis", use_container_width=True):
             st.session_state.run_camera = True
             st.session_state.live_cam_face_results = [] 
     with col_btn2:
-        if st.button("🛑 Stop Camera", key="stop_cam_btn_main", use_container_width=True):
+        if st.button("🛑 Stop Analysis", key="stop_analysis", use_container_width=True):
             st.session_state.run_camera = False 
 
     image_placeholder = st.empty()
     results_display_area = st.empty() 
 
-    if st.session_state.run_camera:
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            image_placeholder.error("Webcam not accessible. Check permissions or if it's in use.")
-            st.session_state.run_camera = False
-            st.session_state.camera_permission = False
-            return
+    if st.session_state.run_camera and st.session_state.camera_frame is not None:
+        frame = st.session_state.camera_frame.copy()
+        faces = detect_faces(frame, face_cascade)
         
-        while st.session_state.run_camera:
-            ret, frame = cap.read()
-            if not ret:
-                image_placeholder.warning("Failed to capture frame. Stopping.")
-                st.session_state.run_camera = False
-                break
-
-            processed_frame = frame.copy() 
-            faces = detect_faces(frame, face_cascade)
-            
-            current_frame_results_temp = []
-            if len(faces) > 0:
-                for i, (x, y, w, h) in enumerate(faces):
-                    face_roi = frame[y:y+h, x:x+w]
-                    if face_roi.size > 0:
-                        analysis_result = analyze_face(face_roi, emotion_model, spoof_model, current_spoof_threshold)
-                        analysis_result['id'] = i + 1 
-                        current_frame_results_temp.append(analysis_result)
-                        
-                        draw_detections_on_frame(
-                            processed_frame, x, y, w, h,
-                            analysis_result.get('emotion', 'N/A'),
-                            analysis_result.get('emotion_confidence', 0) * 100, 
-                            "Real" if analysis_result.get('is_real', False) else "Spoof",
-                            analysis_result.get('display_spoof_confidence', 0) * 100 
-                        )
-            
-            st.session_state.live_cam_face_results = current_frame_results_temp
-            image_placeholder.image(processed_frame, channels="BGR", use_container_width=True, caption="Live Feed") 
-
-            if not st.session_state.run_camera: 
-                break
+        current_frame_results_temp = []
+        if len(faces) > 0:
+            for i, (x, y, w, h) in enumerate(faces):
+                face_roi = frame[y:y+h, x:x+w]
+                if face_roi.size > 0:
+                    analysis_result = analyze_face(face_roi, emotion_model, spoof_model, current_spoof_threshold)
+                    analysis_result['id'] = i + 1 
+                    current_frame_results_temp.append(analysis_result)
+                    
+                    draw_detections_on_frame(
+                        frame, x, y, w, h,
+                        analysis_result.get('emotion', 'N/A'),
+                        analysis_result.get('emotion_confidence', 0) * 100, 
+                        "Real" if analysis_result.get('is_real', False) else "Spoof",
+                        analysis_result.get('display_spoof_confidence', 0) * 100 
+                    )
         
-        cap.release()
-        if not st.session_state.run_camera and not st.session_state.live_cam_face_results:
-            image_placeholder.empty() 
-            image_placeholder.info("Camera stopped. No faces detected in the last frame or analysis was interrupted.")
+        st.session_state.live_cam_face_results = current_frame_results_temp
+        image_placeholder.image(frame, channels="BGR", use_container_width=True, caption="Analysis Result")
 
     if st.session_state.live_cam_face_results:
         with results_display_area.container():
             st.markdown('<div class="result-summary-area">', unsafe_allow_html=True)
-            st.markdown(f"<h3 class='summary-title'>Live Analysis Summary ({len(st.session_state.live_cam_face_results)} Face(s))</h3>", unsafe_allow_html=True)
+            st.markdown(f"<h3 class='summary-title'>Analysis Summary ({len(st.session_state.live_cam_face_results)} Face(s))</h3>", unsafe_allow_html=True)
             
             for i, res_item in enumerate(st.session_state.live_cam_face_results):
                 st.markdown(f"<h4 class='face-id-title'>👤 Face {res_item.get('id', i+1)}</h4>", unsafe_allow_html=True)
@@ -373,7 +493,7 @@ def webcam_analysis(emotion_model, spoof_model, face_cascade):
                             st.plotly_chart(fig, use_container_width=True)
             st.markdown('</div>', unsafe_allow_html=True)
             
-            if st.button("💾 Save Current Live Analysis to Dashboard", key="save_live_analysis", use_container_width=True):
+            if st.button("💾 Save Current Analysis to Dashboard", key="save_live_analysis", use_container_width=True):
                 for res_to_save in st.session_state.live_cam_face_results:
                     save_data = res_to_save.copy() 
                     save_data['timestamp'] = datetime.now()
@@ -382,7 +502,7 @@ def webcam_analysis(emotion_model, spoof_model, face_cascade):
                 st.success(f"✅ {len(st.session_state.live_cam_face_results)} face analysis result(s) saved to dashboard!")
 
     elif not st.session_state.run_camera: 
-        image_placeholder.info("Camera is off. Click 'Start Camera' to begin.")
+        image_placeholder.info("Analysis is off. Click 'Start Analysis' to begin.")
         results_display_area.empty()
 
 def image_analysis(emotion_model, spoof_model, face_cascade):
