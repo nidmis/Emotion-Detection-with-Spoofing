@@ -1,10 +1,10 @@
 streamlit
-tensorflow==2.15.1
+tensorflow
 opencv-python-headless
-numpy==1.26.4
+numpy
 Pillow
 plotly
-pandas==2.1.4
+pandas
 scikit-learn
 matplotlib
 kaggle
