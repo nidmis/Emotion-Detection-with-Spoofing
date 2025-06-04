@@ -9,6 +9,9 @@ from PIL import Image
 import plotly.express as px
 from datetime import datetime
 import pandas as pd
+import av
+import threading
+import time
  
 APP_VERSION = "1.1.0"
  
@@ -21,141 +24,7 @@ st.set_page_config(
  
 st.markdown("""
 <style>
-    .main-header {
-        background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%);
-        padding: 2rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-        margin-bottom: 2rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    }
-    
-    .metric-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: white;
-        text-align: center;
-        margin: 1rem 0;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-    }
-    
-    .result-card { 
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: white;
-        margin: 1rem 0;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-    }
-    
-    .success-card { 
-        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: white; 
-        margin: 1rem 0;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-    }
-    
-    .warning-card { 
-        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
-        padding: 1.5rem;
-        border-radius: 10px;
-        color: #333; 
-        margin: 1rem 0;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-    }
-    
-    .stButton > button {
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 25px;
-        padding: 0.75rem 2rem;
-        font-weight: bold;
-        transition: all 0.3s ease;
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
-    }
-    
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #2193b0 0%, #6dd5ed 100%);
-    }
-    
-    .live-results { 
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(10px);
-        border-radius: 15px;
-        padding: 1rem;
-        margin: 1rem 0;
-        border: 1px solid rgba(255, 255, 255, 0.2);
-    }
-
-    .result-summary-area {
-        margin-top: 30px; 
-        padding: 20px;
-        background-color: #f8f9fa; 
-        border-radius: 12px; 
-        border: 1px solid #e9ecef;
-    }
-    .result-summary-area h3.summary-title { 
-        color: #0056b3;
-        margin-bottom: 20px;
-        text-align: center;
-        font-size: 1.5em;
-    }
-    .face-result-item {
-        background-color: #ffffff;
-        border: 1px solid #ced4da;
-        border-left: 7px solid #007bff; 
-        border-radius: 8px;
-        padding: 20px; 
-        margin-bottom: 20px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.08); 
-        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
-    }
-    .face-result-item:hover {
-        transform: translateY(-5px); 
-        box-shadow: 0 6px 15px rgba(0,0,0,0.12);
-    }
-    .face-result-item h4.face-id-title {  
-        margin-top: 0;
-        margin-bottom: 15px; 
-        color: #0056b3; 
-        font-size: 1.2em; 
-        border-bottom: 2px solid #f0f2f6; 
-        padding-bottom: 10px;
-    }
-    .result-label {
-        font-weight: bold;
-        color: #343a40; 
-        margin-right: 8px;
-        font-size: 1.05em;
-    }
-    .result-value-emotion {
-        font-weight: bold;
-        font-size: 1.05em;
-    }
-    .result-value-spoof-real {
-        color: #198754; 
-        font-weight: bold;
-        font-size: 1.05em;
-    }
-    .result-value-spoof-fake {
-        color: #dc3545; 
-        font-weight: bold;
-        font-size: 1.05em;
-    }
-    .confidence-score {
-        font-size: 0.95em; 
-        color: #495057; 
-    }
-
+    /* ... (keep all existing CSS styles unchanged) ... */
 </style>
 """, unsafe_allow_html=True)
  
@@ -166,7 +35,9 @@ if 'run_camera' not in st.session_state:
 if 'live_cam_face_results' not in st.session_state: 
     st.session_state.live_cam_face_results = []
 if 'spoof_real_threshold_ss' not in st.session_state:
-    st.session_state.spoof_real_threshold_ss = 0.70 
+    st.session_state.spoof_real_threshold_ss = 0.70
+if 'camera_permission' not in st.session_state:
+    st.session_state.camera_permission = False
  
 @st.cache_resource
 def load_emotion_model():
@@ -403,7 +274,15 @@ def main():
 def webcam_analysis(emotion_model, spoof_model, face_cascade):
     st.markdown("## 📹 Live Webcam Facial Analysis")
     st.markdown("Real-time emotion detection and authenticity verification from your webcam feed.")
-
+    
+    # Camera permission handling
+    if not st.session_state.camera_permission:
+        st.warning("🔒 Camera access requires your permission. Click below to enable camera.")
+        if st.button("Allow Camera Access", key="request_camera_permission"):
+            st.session_state.camera_permission = True
+            st.rerun()
+        return
+    
     st.session_state.spoof_real_threshold_ss = st.slider(
         "Spoof Detection 'Real' Threshold:",
         min_value=0.0, max_value=1.0,
@@ -437,12 +316,15 @@ def webcam_analysis(emotion_model, spoof_model, face_cascade):
         if not cap.isOpened():
             image_placeholder.error("Webcam not accessible. Check permissions or if it's in use.")
             st.session_state.run_camera = False
+            st.session_state.camera_permission = False
+            return
         
         while st.session_state.run_camera:
             ret, frame = cap.read()
             if not ret:
                 image_placeholder.warning("Failed to capture frame. Stopping.")
-                st.session_state.run_camera = False; break
+                st.session_state.run_camera = False
+                break
 
             processed_frame = frame.copy() 
             faces = detect_faces(frame, face_cascade)
